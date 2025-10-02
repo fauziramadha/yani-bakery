@@ -1,10 +1,23 @@
-// firebase config defaults (override with env vars in Vercel)
-export const firebaseConfig = {
-  apiKey: process.env.REACT_APP_FIREBASE_APIKEY || "AIzaSyBvmJhGaAqtp0z95utXQ7YBCpI20F_XjCE",
-  authDomain: process.env.REACT_APP_FIREBASE_AUTH_DOMAIN || "hpp-yani.firebaseapp.com",
-  projectId: process.env.REACT_APP_FIREBASE_PROJECT_ID || "hpp-yani",
-  storageBucket: process.env.REACT_APP_FIREBASE_STORAGE_BUCKET || "hpp-yani.firebasestorage.app",
-  messagingSenderId: process.env.REACT_APP_FIREBASE_MESSAGING_SENDER_ID || "166817013117",
-  appId: process.env.REACT_APP_FIREBASE_APP_ID || "1:166817013117:web:1e8af138fbd2a176278014",
-  measurementId: process.env.REACT_APP_FIREBASE_MEASUREMENT_ID || "G-2PQ20TVFK1",
+// src/firebaseConfig.js
+import { initializeApp } from "firebase/app";
+import { getAuth } from "firebase/auth";
+import { getFirestore } from "firebase/firestore";
+
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID,
+  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID
 };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+
+// Export services
+export const auth = getAuth(app);
+export const db = getFirestore(app);
+
+export default app;
