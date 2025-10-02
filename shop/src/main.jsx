@@ -1,1 +1,17 @@
-import React from 'react';import { createRoot } from 'react-dom/client';import App from './App';import './styles.css';createRoot(document.getElementById('root')).render(<App/>);
+import React from "react";
+import ReactDOM from "react-dom/client";
+import App from "./App.jsx";
+import "./styles.css";
+
+// Pastikan index.html punya <div id="root"></div>
+const root = document.getElementById("root");
+
+if (root) {
+  ReactDOM.createRoot(root).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  );
+} else {
+  console.error("❌ Root element not found. Pastikan index.html ada <div id='root'></div>");
+}
