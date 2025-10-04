@@ -1,2 +1,20 @@
-const fetch = (...args) => import('node-fetch').then(({default:fetch})=>fetch(...args));
-module.exports = async (req,res)=>{ try{ if(req.method!=='POST') return res.status(405).send('Method not allowed'); const {order, orderId, type} = req.body || {}; const token = process.env.TELEGRAM_BOT_TOKEN; const chatId = process.env.TELEGRAM_CHAT_ID; if(!token || !chatId) return res.status(500).send('Missing TELEGRAM env vars'); let text=''; if(type==='payment_update') text=`💳 Payment update for order ${orderId}`; else if(order) text=`📬 *New order received!*\nOrder ID: ${orderId || '—'}\nName: ${order.name}\nPhone: ${order.phone}\nProduct: ${order.productName}\nQty: ${order.quantity}\nPickup: ${order.pickupDate}\nPayment: ${order.paymentMethod}`; else text=`📬 New order (ID: ${orderId})`; const resp = await fetch(`https://api.telegram.org/bot${token}/sendMessage`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({chat_id:chatId,text,parse_mode:'Markdown'})}); const body = await resp.json(); return res.status(200).json({ok:true,body}); }catch(err){ console.error(err); return res.status(500).json({ok:false,error:String(err)}); } };
+export default async function handler(req, res) {
+  const { message } = req.body;
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+
+  try {
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: message,
+      }),
+    });
+    res.status(200).json({ success: true });
+  } catch (error) {
+    console.error("Telegram error:", error);
+    res.status(500).json({ success: false });
+  }
+}
