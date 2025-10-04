@@ -1,147 +1,144 @@
-import React, { useEffect, useState } from 'react';
-import { db } from './firebaseConfig';
-import {
-  collection,
-  query,
-  orderBy,
-  onSnapshot,
-  addDoc
-} from 'firebase/firestore';
+// shop/src/App.jsx
+import React, { useEffect, useState } from "react";
+import { collection, query, orderBy, onSnapshot, doc, getDoc, updateDoc } from "firebase/firestore";
+import { db } from "./firebaseConfig";
+import BreadCard from "./components/BreadCard";
+import OrderModal from "./components/OrderModal";
+import "./styles.css";
 
 export default function App() {
   const [products, setProducts] = useState([]);
-  const [selected, setSelected] = useState(null);
-  const [form, setForm] = useState({
-    name: '',
-    phone: '',
-    quantity: 1,
-    orderDate: '',
-    pickupDate: '',
-    paymentMethod: 'DANA',
-    address: ''
-  });
+  const [selected, setSelected] = useState(null); // product object when user clicks
+  const [loading, setLoading] = useState(true);
+  const [paymentMethods, setPaymentMethods] = useState(["DANA", "QRIS"]);
 
-  // Load produk dari Firestore
+  // Listen products in real-time
   useEffect(() => {
-    const q = query(collection(db, 'products'), orderBy('createdAt', 'asc'));
-    const unsub = onSnapshot(q, snap => {
+    const q = query(collection(db, "products"), orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(q, (snap) => {
       const items = [];
-      snap.forEach(d => items.push({ id: d.id, ...d.data() }));
+      snap.forEach((d) => items.push({ id: d.id, ...d.data() }));
       setProducts(items);
+      setLoading(false);
+    }, (err) => {
+      console.error("products onSnapshot error:", err);
+      setLoading(false);
     });
     return () => unsub();
   }, []);
 
-  // Buka popup order
-  const open = (p) => {
-    setSelected(p);
-    const today = new Date().toISOString().slice(0, 10);
-    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-    setForm({
-      ...form,
-      productId: p.id,
-      quantity: 1,
-      orderDate: today,
-      pickupDate: tomorrow
-    });
+  // Load payment methods from settings (optional)
+  useEffect(() => {
+    (async () => {
+      try {
+        const settingsRef = doc(db, "settings", "payments");
+        const s = await getDoc(settingsRef);
+        if (s.exists() && Array.isArray(s.data().methods)) {
+          setPaymentMethods(s.data().methods);
+        }
+      } catch (e) {
+        // ignore; keep defaults
+        console.warn("failed to load payment settings", e);
+      }
+    })();
+  }, []);
+
+  const openOrder = (product) => {
+    setSelected(product);
   };
 
-  // Submit order
-  const submit = async () => {
-    if (!selected) return;
-    if (form.quantity > selected.stock) {
-      alert('Stok tidak cukup');
-      return;
+  const closeOrder = () => setSelected(null);
+
+  // submit handler called from modal:
+  // orderData = { name, phone, address, quantity, orderDate, pickupDate, paymentMethod, productId }
+  const handleSubmitOrder = async (orderData) => {
+    if (!orderData || !orderData.productId) return;
+    try {
+      // double-check stock atomically-ish: read current stock, then update
+      const prodRef = doc(db, "products", orderData.productId);
+      const snap = await getDoc(prodRef);
+      if (!snap.exists()) throw new Error("Product not found");
+      const prod = snap.data();
+      const currentStock = prod.stock || 0;
+      if (orderData.quantity > currentStock) {
+        throw new Error("Stock tidak mencukupi");
+      }
+
+      // decrease stock
+      await updateDoc(prodRef, { stock: currentStock - orderData.quantity });
+
+      // create order doc (the backend/serverless can also enrich it)
+      // we keep using client-side Firestore add via serverless if needed later
+      const orderPayload = {
+        name: orderData.name,
+        phone: orderData.phone,
+        address: orderData.address,
+        quantity: Number(orderData.quantity),
+        productId: orderData.productId,
+        productName: prod.name || orderData.productName || "—",
+        orderDate: orderData.orderDate,
+        pickupDate: orderData.pickupDate,
+        paymentMethod: orderData.paymentMethod,
+        paymentStatus: "pending",
+        createdAt: new Date()
+      };
+      // add to orders collection
+      const { addDoc, collection: coll } = await import("firebase/firestore");
+      const ordersRef = coll(db, "orders");
+      const orderDoc = await addDoc(ordersRef, orderPayload);
+
+      // notify Telegram via serverless endpoint (api/notify) — not blocking user
+      try {
+        fetch("/api/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: orderDoc.id, order: orderPayload })
+        }).catch((e) => console.warn("notify failed", e));
+      } catch (e) {
+        console.warn("notify catch", e);
+      }
+
+      // close modal and inform user
+      closeOrder();
+      alert("Terima kasih — order berhasil dikirim! (Status: pending)");
+    } catch (err) {
+      console.error(err);
+      alert("Gagal memproses order: " + (err.message || err));
     }
-    const order = {
-      ...form,
-      productName: selected.name,
-      paymentStatus: 'pending',
-      createdAt: new Date()
-    };
-    await addDoc(collection(db, 'orders'), order);
-    alert('Order terkirim!');
-    setSelected(null);
   };
 
   return (
-    <div className='container'>
-      <header className='header'>
-        <h1>La Petite Boulangerie - Shop</h1>
+    <div className="container">
+      <header className="header">
+        <div>
+          <h1 className="brand">La Petite Boulangerie</h1>
+          <p className="subtitle">Roti artisan — fresh daily</p>
+        </div>
       </header>
 
-      {/* List produk */}
-      <section className='grid'>
-        {products.map(p => (
-          <article
-            key={p.id}
-            className='card'
-            onClick={() => p.stock > 0 && open(p)}
-          >
-            <img src={p.image} alt='' />
-            <h3>{p.name}</h3>
-            <p>Rp {p.price}</p>
-            <p>{p.stock > 0 ? `${p.stock} tersedia` : 'SOLD OUT'}</p>
-          </article>
-        ))}
-      </section>
+      <main>
+        {loading ? (
+          <div className="center">Memuat produk…</div>
+        ) : (
+          <section className="grid">
+            {products.length === 0 && <div className="center">Belum ada produk.</div>}
+            {products.map((p) => (
+              <BreadCard key={p.id} product={p} onClick={() => openOrder(p)} />
+            ))}
+          </section>
+        )}
+      </main>
 
-      {/* Modal order */}
       {selected && (
-        <div className='modal-backdrop'>
-          <div className='modal'>
-            <div style={{ display: 'flex', gap: 12 }}>
-              <img
-                src={selected.image}
-                style={{ width: 220, height: 180, objectFit: 'cover' }}
-              />
-              <div style={{ flex: 1 }}>
-                <h2>{selected.name}</h2>
-                <p>Rp {selected.price}</p>
-
-                <label>Jumlah</label>
-                <input
-                  type='number'
-                  min='1'
-                  max={selected.stock}
-                  value={form.quantity}
-                  onChange={e => setForm({ ...form, quantity: Number(e.target.value) })}
-                />
-
-                <input
-                  placeholder='Nama'
-                  value={form.name}
-                  onChange={e => setForm({ ...form, name: e.target.value })}
-                />
-                <input
-                  placeholder='No HP'
-                  value={form.phone}
-                  onChange={e => setForm({ ...form, phone: e.target.value })}
-                />
-                <input
-                  placeholder='Alamat'
-                  value={form.address}
-                  onChange={e => setForm({ ...form, address: e.target.value })}
-                />
-
-                <div style={{ marginTop: 8 }}>
-                  <button
-                    className='button'
-                    onClick={() => {
-                      if (confirm('Apakah kamu yakin untuk melanjutkan orderan ini?')) submit();
-                    }}
-                  >
-                    Lanjut
-                  </button>
-                  <button onClick={() => setSelected(null)}>Batal</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
+        <OrderModal
+          product={selected}
+          paymentMethods={paymentMethods}
+          onClose={closeOrder}
+          onSubmit={handleSubmitOrder}
+        />
       )}
 
-      <footer className='footer'>© La Petite Boulangerie</footer>
+      <footer className="footer">© La Petite Boulangerie</footer>
     </div>
   );
 }
